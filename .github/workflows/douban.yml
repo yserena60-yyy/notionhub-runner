@@ -216,7 +216,7 @@ jobs:
           RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
           INPUT_SYNC_MODE: ${{ github.event.inputs.sync_mode || '' }}
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -255,12 +255,20 @@ jobs:
       - name: 检查同步电影配置
         id: job_config
         if: steps.progress.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "movie" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -299,7 +307,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -330,6 +338,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job movie
+
 
       - name: 记录同步电影结果
         if: always() && steps.activation.outputs.enabled == 'true'
@@ -478,12 +487,20 @@ jobs:
       - name: 检查同步图书配置
         id: job_config
         if: needs.movie.outputs.enabled == 'true' && needs.movie.result == 'success' && steps.restore.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "book" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -654,7 +671,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -685,6 +702,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job book
+
 
       - name: 记录同步图书结果
         if: always() && needs.movie.outputs.enabled == 'true' && needs.movie.result == 'success'
@@ -833,12 +851,20 @@ jobs:
       - name: 检查同步音乐配置
         id: job_config
         if: needs.movie.outputs.enabled == 'true' && needs.book.result == 'success' && steps.restore.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "music" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -1009,7 +1035,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -1040,6 +1066,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job music
+
 
       - name: 记录同步音乐结果
         if: always() && needs.movie.outputs.enabled == 'true' && needs.book.result == 'success'
@@ -1188,12 +1215,20 @@ jobs:
       - name: 检查同步游戏配置
         id: job_config
         if: needs.movie.outputs.enabled == 'true' && needs.music.result == 'success' && steps.restore.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "game" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -1364,7 +1399,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -1395,6 +1430,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job game
+
 
       - name: 记录同步游戏结果
         if: always() && needs.movie.outputs.enabled == 'true' && needs.music.result == 'success'
@@ -1438,6 +1474,8 @@ jobs:
     name: 同步播客
     needs: [movie, game]
     if: needs.movie.outputs.enabled == 'true' && needs.game.result == 'success'
+    outputs:
+      notion_succeeded: ${{ steps.target_status.outputs.notion_succeeded }}
     runs-on: ubuntu-latest
     env:
       DOUBAN_CONFIG: ${{ secrets.DOUBAN_CONFIG }}
@@ -1543,12 +1581,20 @@ jobs:
       - name: 检查同步播客配置
         id: job_config
         if: needs.movie.outputs.enabled == 'true' && needs.game.result == 'success' && steps.restore.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "podcast" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -1719,7 +1765,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -1750,6 +1796,18 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job podcast
+
+      - name: 记录 Notion 目标状态
+        id: target_status
+        if: always() && needs.movie.outputs.enabled == 'true' && needs.game.result == 'success'
+        run: |
+          NOTION_SUCCEEDED=false
+          if [ "${{ steps.sync.outcome }}" = "success" ]; then
+            NOTION_SUCCEEDED=true
+          elif [ -f "$NOTIONHUB_TARGET_RESULTS_PATH" ] && jq -e '.targets.notion.success == true' "$NOTIONHUB_TARGET_RESULTS_PATH" >/dev/null; then
+            NOTION_SUCCEEDED=true
+          fi
+          echo "notion_succeeded=$NOTION_SUCCEEDED" >> "$GITHUB_OUTPUT"
 
       - name: 记录同步播客结果
         if: always() && needs.movie.outputs.enabled == 'true' && needs.game.result == 'success'
@@ -1786,13 +1844,13 @@ jobs:
       - name: 确认同步播客成功
         if: always() && needs.movie.outputs.enabled == 'true' && needs.game.result == 'success' && steps.job_config.outputs.enabled == 'true'
         run: |
-          if [ "${{ steps.sync.outcome }}" != "success" ]; then exit 1; fi
+          if [ "${{ steps.sync.outcome }}" != "success" ] && [ "${{ steps.target_status.outputs.notion_succeeded }}" != "true" ]; then exit 1; fi
 
 
   podcast_transcription:
     name: 播客语音转文字
     needs: [movie, podcast]
-    if: needs.movie.outputs.enabled == 'true' && needs.podcast.result == 'success'
+    if: needs.movie.outputs.enabled == 'true' && (needs.podcast.result == 'success' || (needs.podcast.result == 'failure' && needs.podcast.outputs.notion_succeeded == 'true'))
     runs-on: ubuntu-latest
     env:
       DOUBAN_CONFIG: ${{ secrets.DOUBAN_CONFIG }}
@@ -1806,7 +1864,7 @@ jobs:
     steps:
       - name: 恢复上一阶段进度
         id: restore
-        if: needs.movie.outputs.enabled == 'true' && needs.podcast.result == 'success'
+        if: needs.movie.outputs.enabled == 'true' && (needs.podcast.result == 'success' || (needs.podcast.result == 'failure' && needs.podcast.outputs.notion_succeeded == 'true'))
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1898,14 +1956,22 @@ jobs:
 
       - name: 检查播客语音转文字配置
         id: job_config
-        if: needs.movie.outputs.enabled == 'true' && needs.podcast.result == 'success' && steps.restore.outcome == 'success'
+        if: needs.movie.outputs.enabled == 'true' && (needs.podcast.result == 'success' || (needs.podcast.result == 'failure' && needs.podcast.outputs.notion_succeeded == 'true')) && steps.restore.outcome == 'success'
         continue-on-error: true
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "podcast" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -2079,7 +2145,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -2111,8 +2177,9 @@ jobs:
           cd runner
           python -m notionhub_runner sync douban --job podcast_transcription
 
+
       - name: 记录播客语音转文字结果
-        if: always() && needs.movie.outputs.enabled == 'true' && needs.podcast.result == 'success'
+        if: always() && needs.movie.outputs.enabled == 'true' && (needs.podcast.result == 'success' || (needs.podcast.result == 'failure' && needs.podcast.outputs.notion_succeeded == 'true'))
         continue-on-error: true
         run: |
           if [ "${{ steps.restore.outcome }}" != "success" ] || [ "${{ steps.job_config.outcome }}" != "success" ]; then
@@ -2131,7 +2198,7 @@ jobs:
           jq -cn             --arg jobKey "podcast_transcription"             --arg stageLabel "播客语音转文字"             --arg status "$STATUS"             --arg failureClass "${NOTIONHUB_FAILURE_CLASS:-}"             --argjson stageIndex 6             --argjson required false             '{stageIndex:$stageIndex,jobKey:$jobKey,label:$stageLabel,status:$status,required:$required,failureClass:(if ($failureClass | length) > 0 then $failureClass else null end)}'             > "${{ github.workspace }}/notionhub-stage-06.json"
 
       - name: 保存播客语音转文字进度
-        if: always() && needs.movie.outputs.enabled == 'true' && needs.podcast.result == 'success'
+        if: always() && needs.movie.outputs.enabled == 'true' && (needs.podcast.result == 'success' || (needs.podcast.result == 'failure' && needs.podcast.outputs.notion_succeeded == 'true'))
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -2255,12 +2322,20 @@ jobs:
       - name: 检查同步舞台剧配置
         id: job_config
         if: needs.movie.outputs.enabled == 'true' && needs.podcast_transcription.result == 'success' && steps.restore.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$DOUBAN_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.DOUBAN_SYNC_PLAN // "lifetime"')
           JOB_ENABLED=true
           SKIP_REASON=""
-          SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          CONFIG_SERVICE_OPTIONS=$(printf '%s' "$SERVICE_CONFIG" | jq -c '.DOUBAN_SERVICE_OPTIONS // {}')
+          PAYLOAD_SERVICE_OPTIONS=$(jq -cn --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | if (.serviceOptions | type) == "object" then .serviceOptions else null end')
+          if [ "$PAYLOAD_SERVICE_OPTIONS" != "null" ]; then
+            SERVICE_OPTIONS="$PAYLOAD_SERVICE_OPTIONS"
+          else
+            SERVICE_OPTIONS="$CONFIG_SERVICE_OPTIONS"
+          fi
           if ! printf '%s' "$SERVICE_OPTIONS" | jq -e --arg key "drama" '(if type == "string" then (try fromjson catch {}) elif type == "object" then . else {} end) | (.enabledStreams // []) as $enabled | ($enabled | length == 0) or ($enabled | index($key) != null)' >/dev/null; then
             JOB_ENABLED=false
             SKIP_REASON="未在同步内容中启用"
@@ -2431,7 +2506,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$DOUBAN_CONFIG" | jq -r '(.DOUBAN_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -2462,6 +2537,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync douban --job drama
+
 
       - name: 记录同步舞台剧结果
         if: always() && needs.movie.outputs.enabled == 'true' && needs.podcast_transcription.result == 'success'

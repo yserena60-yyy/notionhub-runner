@@ -216,7 +216,7 @@ jobs:
           RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
           INPUT_SYNC_MODE: ${{ github.event.inputs.sync_mode || '' }}
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$NETEASEMUSIC_CONFIG" | jq -r '(.NETEASEMUSIC_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -255,6 +255,8 @@ jobs:
       - name: 检查同步歌曲数据配置
         id: job_config
         if: steps.progress.outcome == 'success'
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$NETEASEMUSIC_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.NETEASEMUSIC_SYNC_PLAN // "lifetime"')
@@ -295,7 +297,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$NETEASEMUSIC_CONFIG" | jq -r '(.NETEASEMUSIC_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -326,6 +328,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync neteasemusic --job data
+
 
       - name: 记录同步歌曲数据结果
         if: always() && steps.activation.outputs.enabled == 'true'
@@ -476,6 +479,8 @@ jobs:
         id: job_config
         if: needs.data.outputs.enabled == 'true' && needs.data.result == 'success' && steps.restore.outcome == 'success'
         continue-on-error: true
+        env:
+          RAW_ACTION_PAYLOAD: ${{ github.event.inputs.payload || '{}' }}
         run: |
           SERVICE_CONFIG="$NETEASEMUSIC_CONFIG"
           PLAN=$(printf '%s' "$SERVICE_CONFIG" | jq -r '.NETEASEMUSIC_SYNC_PLAN // "lifetime"')
@@ -655,7 +660,7 @@ jobs:
           SUPPORTS_FULL_SYNC: 'true'
           NOTIONHUB_DEFER_FILES: 'true'
         run: |
-          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
+          REQUESTED_SYNC_MODE=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" --arg input "$INPUT_SYNC_MODE" --arg server "${NOTIONHUB_CAPTURE_SYNC_MODE:-}" '($raw | fromjson? // {}) as $payload | ($payload.requestedSyncMode // $payload.syncMode // $payload.sync_mode // "") as $payload_mode | (if $server == "full" or $server == "incremental" then $server elif $payload_mode == "full" or $payload_mode == "incremental" then $payload_mode elif $input == "full" or $input == "incremental" then $input else "incremental" end)')
           CONFIG_INITIAL_FULL_SYNC_REQUIRED=$(printf '%s' "$NETEASEMUSIC_CONFIG" | jq -r '(.NETEASEMUSIC_INITIAL_FULL_SYNC_REQUIRED // false) | tostring' 2>/dev/null || echo "false")
           PAYLOAD_INITIAL_FULL_SYNC_REQUIRED=$(jq -nr --arg raw "$RAW_ACTION_PAYLOAD" '($raw | fromjson? // {}) | (.initialFullSyncForced // false) | tostring')
           if [ "$CONFIG_INITIAL_FULL_SYNC_REQUIRED" = "true" ] || [ "$PAYLOAD_INITIAL_FULL_SYNC_REQUIRED" = "true" ]; then
@@ -686,6 +691,7 @@ jobs:
           fi
           cd runner
           python -m notionhub_runner sync neteasemusic --job media_files
+
 
       - name: 记录上传已启用音频与歌词结果
         if: always() && needs.data.outputs.enabled == 'true' && needs.data.result == 'success'
